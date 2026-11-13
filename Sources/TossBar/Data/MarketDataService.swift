@@ -1,5 +1,56 @@
 import Foundation
 
+enum ChartRange: String, CaseIterable, Identifiable {
+    case day = "1D"
+    case month = "1M"
+    case threeMonths = "3M"
+    case sixMonths = "6M"
+    case year = "1Y"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .day: return "1일"
+        case .month: return "1개월"
+        case .threeMonths: return "3개월"
+        case .sixMonths: return "6개월"
+        case .year: return "1년"
+        }
+    }
+
+    var interval: CandleInterval { self == .day ? .minute : .day }
+
+    /// Number of candles to fetch (trading days for daily ranges).
+    var candleCount: Int {
+        switch self {
+        case .day: return 1000 // Pages back until the session day ends.
+        case .month: return 22
+        case .threeMonths: return 66
+        case .sixMonths: return 130
+        case .year: return 250
+        }
+    }
+
+    var cacheTTL: TimeInterval { self == .day ? 20 : 300 }
+}
+
+struct ChartPoint: Identifiable, Hashable {
+    let date: Date
+    let value: Double
+    var id: Date { date }
+}
+
+extension Currency {
+    /// Time zone of the exchange, used to find the session day for intraday charts.
+    var marketTimeZone: TimeZone {
+        switch self {
+        case .usd: return TimeZone(identifier: "America/New_York")!
+        default: return TimeZone(identifier: "Asia/Seoul")!
+        }
+    }
+}
+
 /// The two latest daily candles. Used for the change against the previous close.
 struct DailySnapshot {
     let latest: Candle
@@ -25,6 +76,7 @@ final class MarketDataService: ObservableObject {
 
     private var loopTask: Task<Void, Never>?
     private var lastStockInfoAttempt: [String: Date] = [:]
+    private var chartCache: [String: (fetchedAt: Date, points: [Candle])] = [:]
 
     init(client: TossAPIClient, store: ItemStore, settings: AppSettings) {
         self.client = client
@@ -51,6 +103,7 @@ final class MarketDataService: ObservableObject {
         daily = [:]
         errorMessage = nil
         symbolErrors = [:]
+        chartCache = [:]
         start()
     }
 
@@ -144,5 +197,58 @@ final class MarketDataService: ObservableObject {
         if errors.isEmpty || !quotes.isEmpty {
             lastUpdated = Date()
         }
+    }
+
+    // MARK: Charts
+
+    /// Candles for the chart, oldest first.
+    func chartCandles(symbol: String, range: ChartRange) async throws -> [Candle] {
+        let key = "\(symbol)|\(range.rawValue)"
+        if let cached = chartCache[key], Date().timeIntervalSince(cached.fetchedAt) < range.cacheTTL {
+            return cached.points
+        }
+
+        var collected: [Candle] = []
+        var seen = Set<Date>()
+        var before: String?
+        var remaining = range.candleCount
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = currency(for: symbol).marketTimeZone
+
+        while remaining > 0 {
+            let page = try await client.candles(
+                symbol: symbol,
+                interval: range.interval,
+                count: min(remaining, 200),
+                before: before
+            )
+            for candle in page.candles where seen.insert(candle.timestamp).inserted {
+                collected.append(candle)
+            }
+            remaining = range.candleCount - collected.count
+            guard let next = page.nextBefore, !page.candles.isEmpty else { break }
+            before = next
+
+            // 1D: stop once the pages reach the session before the latest one.
+            if range == .day, let first = collected.first, let last = collected.last,
+               !calendar.isDate(Self.sessionTime(first), inSameDayAs: Self.sessionTime(last)) {
+                break
+            }
+        }
+
+        if range == .day, let newest = collected.first {
+            let sessionDay = Self.sessionTime(newest)
+            collected = collected.filter { calendar.isDate(Self.sessionTime($0), inSameDayAs: sessionDay) }
+        }
+
+        let ascending = Array(collected.reversed())
+        chartCache[key] = (Date(), ascending)
+        return ascending
+    }
+
+    /// A minute candle's timestamp is the end of the bar, so step back a minute to get
+    /// the session day it belongs to.
+    private static func sessionTime(_ candle: Candle) -> Date {
+        candle.timestamp.addingTimeInterval(-60)
     }
 }

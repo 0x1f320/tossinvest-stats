@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// One menu bar item: one `NSStatusItem` and its menu.
+/// One menu bar item: one `NSStatusItem` and its popover.
 @MainActor
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSPopoverDelegate {
     let id: UUID
     private(set) var config: MenuItemConfig
     private let env: AppEnvironment
     private let statusItem: NSStatusItem
+    private let popover = NSPopover()
     /// Padding added to the text width for the fixed item length. macOS adds 16pt to a
     /// fixed-length item's window, so text + 4pt matches a variable-length item
     /// (text + 20pt). Measured on macOS 26.
@@ -32,6 +33,9 @@ final class StatusItemController: NSObject {
             button.action = #selector(handleClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+        popover.behavior = .transient
+        popover.animates = true
+        popover.delegate = self
         render()
     }
 
@@ -49,6 +53,7 @@ final class StatusItemController: NSObject {
     }
 
     func tearDown() {
+        popover.performClose(nil)
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
@@ -81,8 +86,39 @@ final class StatusItemController: NSObject {
 
     // MARK: Click handling
 
+    /// Left click opens the popover; right click or control-click opens the menu.
     @objc private func handleClick(_ sender: NSStatusBarButton) {
-        showContextMenu()
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showContextMenu()
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func togglePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        guard let button = statusItem.button else { return }
+        let root: AnyView
+        switch config.kind {
+        case .stock:
+            root = AnyView(StockPopoverView(itemID: id, env: env))
+        }
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = .preferredContentSize
+        popover.contentViewController = host
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        env.data.refreshSoon()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        // Drop the content so the SwiftUI tasks (chart refresh) stop.
+        popover.contentViewController = nil
     }
 
     private func showContextMenu() {
