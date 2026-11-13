@@ -109,13 +109,14 @@ struct CredentialsHelp: View {
     }
 }
 
-/// First-launch window: enter the keys, then confirm the connection.
+/// First-launch window: enter the keys, confirm the connection, then add starter items.
 struct OnboardingView: View {
     let env: AppEnvironment
     var onFinish: () -> Void
 
     @ObservedObject private var credentials: CredentialStore
     @State private var connectedAccounts: [Account]?
+    @State private var addSamsung = true
 
     init(env: AppEnvironment, onFinish: @escaping () -> Void) {
         self.env = env
@@ -145,12 +146,30 @@ struct OnboardingView: View {
                 .padding(6)
             }
 
+            if connectedAccounts != nil, env.store.items.isEmpty {
+                GroupBox("메뉴바에 추가할 항목") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("주가 — 삼성전자 (005930) 예시", isOn: $addSamsung)
+                        Text("나중에 설정 > 항목에서 언제든 추가/삭제할 수 있습니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                }
+            }
+
             HStack {
                 Button("나중에 하기") { onFinish() }
                 Spacer()
-                Button("시작하기") { onFinish() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(connectedAccounts == nil)
+                Button("시작하기") {
+                    if env.store.items.isEmpty, addSamsung {
+                        env.store.upsert(MenuItemConfig(kind: .stock(StockItemConfig(symbol: "005930"))))
+                    }
+                    env.data.refreshSoon()
+                    onFinish()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(connectedAccounts == nil)
             }
         }
         .padding(24)

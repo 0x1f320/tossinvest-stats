@@ -4,13 +4,14 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let env = AppEnvironment()
-    private var statusItem: NSStatusItem?
+    private var statusBar: StatusBarManager?
     private var settingsWindow: NSWindow?
     private var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        statusBar = StatusBarManager(env: env)
         env.openSettings = { [weak self] in self?.showSettings() }
-        installPlaceholder()
+        env.data.start()
 
         // First launch (no keys yet): ask for the API keys.
         if !env.credentials.isConfigured {
@@ -22,27 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showSettings()
         return true
     }
-
-    private func installPlaceholder() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.autosaveName = "TossBar.placeholder"
-        item.button?.image = NSImage(
-            systemSymbolName: "chart.line.uptrend.xyaxis",
-            accessibilityDescription: "TossBar"
-        )
-        let menu = NSMenu()
-        menu.addItem(withTitle: "설정…", action: #selector(openSettingsFromMenu), keyEquivalent: ",").target = self
-        menu.addItem(.separator())
-        menu.addItem(
-            withTitle: "TossBar 종료",
-            action: #selector(NSApplication.terminate(_:)),
-            keyEquivalent: "q"
-        )
-        item.menu = menu
-        statusItem = item
-    }
-
-    @objc private func openSettingsFromMenu() { showSettings() }
 
     private func makeWindow<V: View>(title: String, rootView: V) -> NSWindow {
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
