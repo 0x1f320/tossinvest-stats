@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import SwiftUI
 
 extension Decimal {
     var double: Double { NSDecimalNumber(decimal: self).doubleValue }
@@ -91,4 +92,37 @@ enum Fmt {
         f.dateFormat = "HH:mm:ss"
         return f
     }()
+}
+
+/// Direction of a change, with its arrow and color.
+enum Trend {
+    case up, down, flat
+
+    init(_ value: Decimal) {
+        if value > 0 { self = .up } else if value < 0 { self = .down } else { self = .flat }
+    }
+
+    var arrow: String {
+        switch self {
+        case .up: return "▲"
+        case .down: return "▼"
+        case .flat: return "–"
+        }
+    }
+
+    var color: Color { Color(nsColor: nsColor) }
+
+    var nsColor: NSColor {
+        switch self {
+        case .up: return Palette.koreanConvention ? .systemRed : .systemGreen
+        case .down: return Palette.koreanConvention ? .systemBlue : .systemRed
+        case .flat: return .secondaryLabelColor
+        }
+    }
+}
+
+/// Global color convention, mirrored from `AppSettings` so plain views can read it.
+enum Palette {
+    /// true: up is red and down is blue (Korean convention). false: up green, down red.
+    nonisolated(unsafe) static var koreanConvention = true
 }

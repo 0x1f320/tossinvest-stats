@@ -354,6 +354,11 @@ struct GeneralSettingsView: View {
             }
             .onChange(of: settings.refreshInterval) { _, _ in env.data.start() }
 
+            Picker("팝오버 색상 규칙", selection: $settings.koreanColorConvention) {
+                Text("상승 빨강 · 하락 파랑 (국내식)").tag(true)
+                Text("상승 초록 · 하락 빨강 (해외식)").tag(false)
+            }
+
             Toggle("로그인 시 자동 실행", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, newValue in
                     do {

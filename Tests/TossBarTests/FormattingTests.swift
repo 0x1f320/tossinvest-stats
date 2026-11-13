@@ -40,3 +40,12 @@ struct FormattingTests {
         #expect(Fmt.quantity(10) == "10")
     }
 }
+
+@Suite("Trend")
+struct TrendTests {
+    @Test func direction() {
+        #expect(Trend(1).arrow == "▲")
+        #expect(Trend(-1).arrow == "▼")
+        #expect(Trend(0).arrow == "–")
+    }
+}
