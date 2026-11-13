@@ -26,6 +26,63 @@ final class StatusBarManager {
         .debounce(for: .milliseconds(80), scheduler: RunLoop.main)
         .sink { [weak self] _ in self?.renderAll() }
         .store(in: &cancellables)
+
+        // TOSSBAR_DIAG=1 prints every item's state every 3 seconds.
+        if ProcessInfo.processInfo.environment["TOSSBAR_DIAG"] == "1" {
+            Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+                .sink { [weak self] _ in self?.dumpDiagnostics() }
+                .store(in: &cancellables)
+        }
+    }
+
+    private var didWarnBlocked = false
+
+    /// A few seconds after the items are created, warns once per launch if macOS
+    /// placed none of them in the menu bar.
+    private func scheduleBlockedCheck() {
+        guard !didWarnBlocked else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, !self.didWarnBlocked, !self.controllers.isEmpty else { return }
+            let blocked = self.controllers.values.allSatisfy(\.isNotPlacedBySystem)
+                && (self.placeholderNotPlaced ?? true)
+            guard blocked else { return }
+            self.didWarnBlocked = true
+            Self.showMenuBarBlockedAlert()
+        }
+    }
+
+    private var placeholderNotPlaced: Bool? {
+        guard let window = placeholder?.button?.window else { return nil }
+        return window.frame.maxY <= 0
+    }
+
+    static func showMenuBarBlockedAlert() {
+        let alert = NSAlert()
+        alert.messageText = "TossBar 가 메뉴 막대에 표시되지 않고 있습니다"
+        alert.informativeText = "macOS 의 '메뉴 막대에서 허용' 설정에서 TossBar 가 꺼져 있습니다.\n시스템 설정 > 메뉴 막대 > '메뉴 막대에서 허용' 목록에서 TossBar 를 켜 주세요. 켜면 바로 나타납니다."
+        alert.addButton(withTitle: "시스템 설정 열기")
+        alert.addButton(withTitle: "닫기")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            // The Menu Bar pane, falling back to System Settings itself.
+            let candidates = [
+                "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension",
+                "x-apple.systempreferences:",
+            ]
+            for string in candidates {
+                if let url = URL(string: string), NSWorkspace.shared.open(url) { break }
+            }
+        }
+    }
+
+    private func dumpDiagnostics() {
+        print("[diag] \(Date()) items=\(controllers.count) placeholder=\(placeholder != nil)")
+        if let error = env.data.errorMessage { print("[diag]   error=\(error)") }
+        for (symbol, error) in env.data.symbolErrors { print("[diag]   \(symbol) error=\(error)") }
+        for controller in controllers.values {
+            print("[diag]   " + controller.diagnostics)
+        }
+        fflush(stdout)
     }
 
     /// Applies only what changed. Existing status items are never recreated: recreating one
@@ -48,6 +105,7 @@ final class StatusBarManager {
             }
         }
         updatePlaceholder(isEmpty: items.isEmpty)
+        scheduleBlockedCheck()
         if !items.isEmpty { env.data.refreshSoon() }
     }
 

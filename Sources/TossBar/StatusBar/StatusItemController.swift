@@ -64,6 +64,31 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         UserDefaults.standard.removeObject(forKey: "NSStatusItem Visible \(name)")
     }
 
+    /// Whether macOS left the item out of the menu bar. When "Allow in Menu Bar" is off
+    /// (macOS 26), the item's window sits off screen at (0, -22). Items hidden by a menu
+    /// bar manager such as Thaw stay at menu bar height, so they don't count.
+    var isNotPlacedBySystem: Bool {
+        guard let window = statusItem.button?.window else { return true }
+        return window.frame.maxY <= 0
+    }
+
+    /// The item's actual state, for `TOSSBAR_DIAG=1`.
+    var diagnostics: String {
+        let button = statusItem.button
+        let window = button?.window
+        return [
+            "name=\(statusItem.autosaveName ?? "-")",
+            "isVisible=\(statusItem.isVisible)",
+            "length=\(statusItem.length)",
+            "title=\(button?.attributedTitle.string ?? "-")",
+            "buttonFrame=\(button.map { NSStringFromRect($0.frame) } ?? "-")",
+            "window=\(window.map { NSStringFromRect($0.frame) } ?? "nil")",
+            "windowVisible=\(window?.isVisible ?? false)",
+            "occlusionVisible=\(window?.occlusionState.contains(.visible) ?? false)",
+            "screen=\(window?.screen.map { NSStringFromRect($0.frame) } ?? "nil")",
+        ].joined(separator: " ")
+    }
+
     func render() {
         guard let button = statusItem.button else { return }
         let title = TitleRenderer.title(for: config, env: env)
