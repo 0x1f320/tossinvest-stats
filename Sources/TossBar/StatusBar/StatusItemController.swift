@@ -174,7 +174,7 @@ enum TitleRenderer {
         case .asset(let asset):
             let seq = env.data.accountSeq(for: asset)
             let account = env.data.accounts.first { $0.accountSeq == seq }?.maskedNumber ?? "기본 계좌"
-            return "자산 · \(account) · \(asset.mode.title)"
+            return "자산 · \(account) · \(asset.mode.title) · \(asset.usesAfterCost ? "수수료·세금 제외" : "원본 수익")"
         }
     }
 

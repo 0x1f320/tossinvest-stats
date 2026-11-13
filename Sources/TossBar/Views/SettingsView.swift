@@ -174,7 +174,7 @@ struct ItemsSettingsView: View {
 
     private func assetDetail(_ config: AssetItemConfig) -> String {
         let account = data.accounts.first { $0.accountSeq == config.accountSeq }?.maskedNumber ?? "기본 계좌"
-        return "\(account) · \(config.mode.title)"
+        return "\(account) · \(config.mode.title)\(config.usesAfterCost ? " · 수수료·세금 제외" : "")"
     }
 }
 
@@ -385,6 +385,7 @@ struct AssetItemEditor: View {
     @State private var label = ""
     @State private var accountSeq: Int64?
     @State private var mode: AssetMode = .total
+    @State private var afterCost = false
     @State private var loadingAccounts = false
     @State private var error: String?
 
@@ -397,6 +398,7 @@ struct AssetItemEditor: View {
             _label = State(initialValue: config.label)
             _accountSeq = State(initialValue: config.accountSeq)
             _mode = State(initialValue: config.mode)
+            _afterCost = State(initialValue: config.afterCost)
         }
     }
 
@@ -423,6 +425,17 @@ struct AssetItemEditor: View {
                     ForEach(AssetMode.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
+                Picker("수익 기준", selection: $afterCost) {
+                    Text("원본 수익").tag(false)
+                    Text("수수료·세금 제외").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .disabled(mode != .total)
+                Text(mode == .total
+                     ? "수수료·세금 제외는 토스증권이 계산한 세후 손익을 씁니다. 보유 종목 목록의 종목별 손익에도 같은 기준이 적용됩니다."
+                     : "일간 손익은 원본 기준만 제공됩니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .formStyle(.columns)
 
@@ -434,7 +447,7 @@ struct AssetItemEditor: View {
                 Spacer()
                 Button("취소", action: dismiss).keyboardShortcut(.cancelAction)
                 Button(existing == nil ? "추가" : "저장") {
-                    let config = AssetItemConfig(label: label, accountSeq: accountSeq, mode: mode)
+                    let config = AssetItemConfig(label: label, accountSeq: accountSeq, mode: mode, afterCost: afterCost)
                     env.store.upsert(MenuItemConfig(id: existing?.id ?? UUID(), kind: .asset(config)))
                     dismiss()
                 }
