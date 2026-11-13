@@ -87,6 +87,8 @@ final class MarketDataService: ObservableObject {
     @Published private(set) var quotes: [String: PriceQuote] = [:]
     @Published private(set) var daily: [String: DailySnapshot] = [:]
     @Published private(set) var stockInfo: [String: StockInfo] = [:]
+    @Published private(set) var holdings: [Int64: HoldingsOverview] = [:]
+    @Published private(set) var accounts: [Account] = []
     @Published private(set) var usdKrw: ExchangeRate?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var errorMessage: String?
@@ -99,6 +101,7 @@ final class MarketDataService: ObservableObject {
 
     private var loopTask: Task<Void, Never>?
     private var lastFxFetch: Date?
+    private var lastAccountsFetch: Date?
     private var lastStockInfoAttempt: [String: Date] = [:]
     private var chartCache: [String: (fetchedAt: Date, points: [Candle])] = [:]
 
@@ -125,8 +128,11 @@ final class MarketDataService: ObservableObject {
     func reset() {
         quotes = [:]
         daily = [:]
+        holdings = [:]
+        accounts = []
         usdKrw = nil
         lastFxFetch = nil
+        lastAccountsFetch = nil
         errorMessage = nil
         symbolErrors = [:]
         chartCache = [:]
@@ -138,6 +144,10 @@ final class MarketDataService: ObservableObject {
     }
 
     // MARK: Accessors
+
+    func accountSeq(for config: AssetItemConfig) -> Int64? {
+        config.accountSeq ?? accounts.first?.accountSeq
+    }
 
     func currency(for symbol: String) -> Currency {
         quotes[symbol]?.currency ?? stockInfo[symbol]?.currency ?? daily[symbol]?.latest.currency ?? .krw
@@ -173,6 +183,18 @@ final class MarketDataService: ObservableObject {
 
         var errors: [String] = []
         let symbols = store.stockSymbols
+        let assetConfigs = store.assetConfigs
+
+        // 0) Accounts. ACCOUNT allows 1 request per second, so cache for 10 minutes.
+        if !assetConfigs.isEmpty,
+           accounts.isEmpty || (lastAccountsFetch.map { Date().timeIntervalSince($0) > 600 } ?? true) {
+            do {
+                accounts = try await client.accounts()
+                lastAccountsFetch = Date()
+            } catch {
+                errors.append(error.localizedDescription)
+            }
+        }
 
         // 1) Stock info (name, market, currency). Fetched once, retried at most every 5 minutes.
         let missingInfo = symbols.filter { symbol in
@@ -226,8 +248,8 @@ final class MarketDataService: ObservableObject {
             }
         }
 
-        // 4) USD/KRW rate for items shown in KRW, cached for a minute.
-        if store.needsUsdKrwForStocks,
+        // 4) USD/KRW rate for US holdings and stock items shown in KRW, cached for a minute.
+        if !assetConfigs.isEmpty || store.needsUsdKrwForStocks,
            lastFxFetch.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
             do {
                 usdKrw = try await client.usdKrwRate()
@@ -237,10 +259,28 @@ final class MarketDataService: ObservableObject {
             }
         }
 
+        // 5) Holdings, once per account even if several items show it.
+        let seqs = Set(assetConfigs.compactMap { accountSeq(for: $0) })
+        for seq in seqs.sorted() {
+            do {
+                holdings[seq] = try await client.holdings(account: seq)
+            } catch {
+                errors.append(error.localizedDescription)
+            }
+        }
+
         errorMessage = errors.first
-        if errors.isEmpty || !quotes.isEmpty {
+        if errors.isEmpty || !quotes.isEmpty || !holdings.isEmpty {
             lastUpdated = Date()
         }
+    }
+
+    /// For the account picker in the asset item editor.
+    func loadAccounts() async throws -> [Account] {
+        let result = try await client.accounts()
+        accounts = result
+        lastAccountsFetch = Date()
+        return result
     }
 
     // MARK: Charts

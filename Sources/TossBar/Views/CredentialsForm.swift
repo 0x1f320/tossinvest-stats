@@ -116,7 +116,8 @@ struct OnboardingView: View {
 
     @ObservedObject private var credentials: CredentialStore
     @State private var connectedAccounts: [Account]?
-    @State private var addSamsung = true
+    @State private var addAsset = true
+    @State private var addSamsung = false
 
     init(env: AppEnvironment, onFinish: @escaping () -> Void) {
         self.env = env
@@ -149,6 +150,7 @@ struct OnboardingView: View {
             if connectedAccounts != nil, env.store.items.isEmpty {
                 GroupBox("메뉴바에 추가할 항목") {
                     VStack(alignment: .leading, spacing: 6) {
+                        Toggle("자산 — 보유 종목 전체 손익 ({수익}₩ ({수익률}%))", isOn: $addAsset)
                         Toggle("주가 — 삼성전자 (005930) 예시", isOn: $addSamsung)
                         Text("나중에 설정 > 항목에서 언제든 추가/삭제할 수 있습니다.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -162,8 +164,13 @@ struct OnboardingView: View {
                 Button("나중에 하기") { onFinish() }
                 Spacer()
                 Button("시작하기") {
-                    if env.store.items.isEmpty, addSamsung {
-                        env.store.upsert(MenuItemConfig(kind: .stock(StockItemConfig(symbol: "005930"))))
+                    if env.store.items.isEmpty {
+                        if addAsset {
+                            env.store.upsert(MenuItemConfig(kind: .asset(AssetItemConfig())))
+                        }
+                        if addSamsung {
+                            env.store.upsert(MenuItemConfig(kind: .stock(StockItemConfig(symbol: "005930"))))
+                        }
                     }
                     env.data.refreshSoon()
                     onFinish()

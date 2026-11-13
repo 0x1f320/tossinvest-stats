@@ -55,6 +55,11 @@ enum Fmt {
         }
     }
 
+    /// KRW profit in the menu bar format: `+1,234,567₩`
+    static func krwProfit(_ value: Decimal) -> String {
+        number(value, signed: true) + "₩"
+    }
+
     /// A ratio as a percentage: `0.1234` → `+12.34%`
     static func percent(ratio: Decimal, signed: Bool = true) -> String {
         number(ratio * 100, fraction: 2, signed: signed) + "%"
