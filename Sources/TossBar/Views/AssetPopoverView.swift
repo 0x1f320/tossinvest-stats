@@ -24,6 +24,13 @@ struct AssetPopoverView: View {
         return nil
     }
 
+    /// Switches the profit basis from the popover. The menu bar follows.
+    private func setAfterCost(_ value: Bool) {
+        guard var config else { return }
+        config.afterCost = value
+        store.upsert(MenuItemConfig(id: itemID, kind: .asset(config)))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let config {
@@ -31,7 +38,7 @@ struct AssetPopoverView: View {
                     let summary = AssetSummary(overview: overview, usdKrw: data.usdKrwRate)
                     header(config: config, seq: seq, summary: summary)
                     Divider()
-                    holdingsList(summary: summary)
+                    holdingsList(summary: summary, afterCost: config.usesAfterCost)
                 } else {
                     VStack(spacing: 8) {
                         ProgressView()
@@ -86,8 +93,22 @@ struct AssetPopoverView: View {
                 Text("계좌 \(account?.maskedNumber ?? String(seq))").font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(config.mode == .total ? "총 손익" : "일간 손익")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text(config.mode == .total ? (config.afterCost ? "총 손익 · 수수료·세금 제외" : "총 손익 · 원본") : "일간 손익")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if config.mode == .total {
+                        Picker("수익 기준", selection: Binding(get: { config.afterCost }, set: { setAfterCost($0) })) {
+                            Text("원본").tag(false)
+                            Text("수수료·세금 제외").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        .controlSize(.small)
+                        .help("메뉴바와 종목별 손익에 쓸 수익 기준")
+                    }
+                }
                 Text("\(headline.amount.map(Fmt.krwProfit) ?? "…") (\(Fmt.percent(ratio: headline.rate)))")
                     .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(trend.color)
@@ -103,29 +124,34 @@ struct AssetPopoverView: View {
                                  value: "\(daily.map(Fmt.krwProfit) ?? "…") (\(Fmt.percent(ratio: summary.dailyRate)))",
                                  valueColor: Trend(daily ?? summary.dailyRate).color)
                     } else {
-                        let total = summary.profit
+                        let total = summary.profit(afterCost: false)
                         StatCell(title: "총 손익",
-                                 value: "\(total.map(Fmt.krwProfit) ?? "…") (\(Fmt.percent(ratio: summary.profitRate)))",
+                                 value: "\(total.map(Fmt.krwProfit) ?? "…") (\(Fmt.percent(ratio: summary.profitRate(afterCost: false))))",
                                  valueColor: Trend(total ?? 0).color)
                     }
                 }
                 GridRow {
+                    // The basis not shown in the headline, for comparison.
+                    let otherIsAfterCost = !config.usesAfterCost
+                    let other = summary.profit(afterCost: otherIsAfterCost)
                     StatCell(title: "세후 평가금액", value: summary.marketValueAfterCost.map { Fmt.number($0) + "원" } ?? "…")
+                    StatCell(title: otherIsAfterCost ? "수수료·세금 제외 손익" : "원본 손익",
+                             value: "\(other.map(Fmt.krwProfit) ?? "…") (\(Fmt.percent(ratio: summary.profitRate(afterCost: otherIsAfterCost))))",
+                             valueColor: Trend(other ?? 0).color)
                     StatCell(title: "보유 종목", value: "\(summary.overview.items.count)개")
-                    StatCell(title: " ", value: " ")
                 }
             }
             if summary.hasUSD {
-                usdBreakdown(summary)
+                usdBreakdown(summary, afterCost: config.usesAfterCost)
             }
         }
     }
 
     /// Domestic and US totals in their own currencies, with the rate used to combine them.
     @ViewBuilder
-    private func usdBreakdown(_ summary: AssetSummary) -> some View {
+    private func usdBreakdown(_ summary: AssetSummary, afterCost: Bool) -> some View {
         let o = summary.overview
-        let pl = o.profitLoss.amount
+        let pl = afterCost ? o.profitLoss.amountAfterCost : o.profitLoss.amount
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text("통화별").foregroundStyle(.secondary)
@@ -159,8 +185,8 @@ struct AssetPopoverView: View {
     // MARK: Holdings
 
     @ViewBuilder
-    private func holdingsList(summary: AssetSummary) -> some View {
-        let items = sorted(summary.overview.items, summary: summary)
+    private func holdingsList(summary: AssetSummary, afterCost: Bool) -> some View {
+        let items = sorted(summary.overview.items, summary: summary, afterCost: afterCost)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("보유 종목").font(.subheadline.weight(.semibold))
@@ -183,6 +209,7 @@ struct AssetPopoverView: View {
                             HoldingRow(
                                 item: item,
                                 summary: summary,
+                                afterCost: afterCost,
                                 sparkline: sparklines[item.symbol],
                                 isExpanded: expanded.contains(item.symbol)
                             )
@@ -201,7 +228,7 @@ struct AssetPopoverView: View {
         }
     }
 
-    private func sorted(_ items: [HoldingItem], summary: AssetSummary) -> [HoldingItem] {
+    private func sorted(_ items: [HoldingItem], summary: AssetSummary, afterCost: Bool) -> [HoldingItem] {
         let sort = HoldingSort(rawValue: sortRaw) ?? .value
         return items.sorted { a, b in
             switch sort {
@@ -209,7 +236,7 @@ struct AssetPopoverView: View {
                 return (summary.krw(a.marketValue.amount.value, currency: a.currency) ?? 0) >
                     (summary.krw(b.marketValue.amount.value, currency: b.currency) ?? 0)
             case .profitRate:
-                return a.profitLoss.rate.value > b.profitLoss.rate.value
+                return a.profit(afterCost: afterCost).rate > b.profit(afterCost: afterCost).rate
             case .dailyRate:
                 return a.dailyProfitLoss.rate.value > b.dailyProfitLoss.rate.value
             case .name:
@@ -236,12 +263,15 @@ enum HoldingSort: String, CaseIterable, Identifiable {
 struct HoldingRow: View {
     let item: HoldingItem
     let summary: AssetSummary
+    /// Show the holding's profit after fees and taxes.
+    let afterCost: Bool
     let sparkline: [Double]?
     let isExpanded: Bool
 
     var body: some View {
         let c = item.currency
-        let plTrend = Trend(item.profitLoss.amount.value)
+        let profit = item.profit(afterCost: afterCost)
+        let plTrend = Trend(profit.amount)
         let dailyTrend = Trend(item.dailyProfitLoss.rate.value)
 
         VStack(alignment: .leading, spacing: 6) {
@@ -265,7 +295,7 @@ struct HoldingRow: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(Fmt.priceWithUnit(item.marketValue.amount.value, c))
                         .font(.callout.monospacedDigit())
-                    Text("\(Fmt.signedAmount(item.profitLoss.amount.value, c)) (\(Fmt.percent(ratio: item.profitLoss.rate.value)))")
+                    Text("\(Fmt.signedAmount(profit.amount, c)) (\(Fmt.percent(ratio: profit.rate)))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(plTrend.color)
                 }

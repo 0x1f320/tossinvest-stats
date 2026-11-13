@@ -1,5 +1,14 @@
 import Foundation
 
+extension HoldingItem {
+    /// The holding's profit in its trading currency, raw or after fees and taxes.
+    func profit(afterCost: Bool) -> (amount: Decimal, rate: Decimal) {
+        afterCost
+            ? (profitLoss.amountAfterCost.value, profitLoss.rateAfterCost.value)
+            : (profitLoss.amount.value, profitLoss.rate.value)
+    }
+}
+
 /// Holdings converted to KRW.
 ///
 /// The API splits amounts by currency (`krw`, `usd`), so the USD part is converted at the
@@ -33,8 +42,13 @@ struct AssetSummary {
     var marketValue: Decimal? { krw(overview.marketValue.amount) }
     var marketValueAfterCost: Decimal? { krw(overview.marketValue.amountAfterCost) }
 
-    var profit: Decimal? { krw(overview.profitLoss.amount) }
-    var profitRate: Decimal { overview.profitLoss.rate.value }
+    func profit(afterCost: Bool) -> Decimal? {
+        krw(afterCost ? overview.profitLoss.amountAfterCost : overview.profitLoss.amount)
+    }
+
+    func profitRate(afterCost: Bool) -> Decimal {
+        afterCost ? overview.profitLoss.rateAfterCost.value : overview.profitLoss.rate.value
+    }
 
     var dailyProfit: Decimal? { krw(overview.dailyProfitLoss.amount) }
     var dailyRate: Decimal { overview.dailyProfitLoss.rate.value }
@@ -42,7 +56,7 @@ struct AssetSummary {
     /// (profit, rate) shown in the menu bar for an item.
     func headline(for config: AssetItemConfig) -> (amount: Decimal?, rate: Decimal) {
         switch config.mode {
-        case .total: return (profit, profitRate)
+        case .total: return (profit(afterCost: config.afterCost), profitRate(afterCost: config.afterCost))
         case .daily: return (dailyProfit, dailyRate)
         }
     }

@@ -63,6 +63,27 @@ struct AssetItemConfig: Codable, Hashable {
     /// nil means the first account.
     var accountSeq: Int64?
     var mode: AssetMode = .total
+    /// Profit basis. false: raw profit. true: after fees and taxes. Applies to the total
+    /// mode only; the API reports daily profit before costs only.
+    var afterCost: Bool = false
+
+    /// True when the after-cost basis is actually in effect.
+    var usesAfterCost: Bool { mode == .total && afterCost }
+}
+
+extension AssetItemConfig {
+    private enum CodingKeys: String, CodingKey {
+        case label, accountSeq, mode, afterCost
+    }
+
+    /// Fills defaults for keys that older saved configs don't have.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        accountSeq = try c.decodeIfPresent(Int64.self, forKey: .accountSeq)
+        mode = try c.decodeIfPresent(AssetMode.self, forKey: .mode) ?? .total
+        afterCost = try c.decodeIfPresent(Bool.self, forKey: .afterCost) ?? false
+    }
 }
 
 enum ItemKind: Codable, Hashable {
