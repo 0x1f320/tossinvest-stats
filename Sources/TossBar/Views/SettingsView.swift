@@ -155,7 +155,8 @@ struct ItemsSettingsView: View {
             config.symbol,
             config.showName ? "이름 표시" : "이름 숨김",
             config.showChange ? "등락률 표시" : "등락률 숨김",
-        ].joined(separator: " · ")
+            config.displayCurrency == .krw ? "원화 환산" : nil,
+        ].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -174,6 +175,7 @@ struct StockItemEditor: View {
     @State private var displayName = ""
     @State private var showName = true
     @State private var showChange = true
+    @State private var displayCurrency: PriceDisplayCurrency = .native
     @State private var isValidating = false
     @State private var error: String?
 
@@ -188,10 +190,21 @@ struct StockItemEditor: View {
             _displayName = State(initialValue: config.displayName ?? "")
             _showName = State(initialValue: config.showName)
             _showChange = State(initialValue: config.showChange)
+            _displayCurrency = State(initialValue: config.displayCurrency)
         }
     }
 
     private var results: [StockUniverse.Entry] { universe.search(query) }
+
+    /// Whether the chosen stock is a US stock, from the search list or the stock info
+    /// already loaded. Otherwise a non-numeric code is taken as a US ticker (Korean codes
+    /// are six characters starting with a digit).
+    private var selectedIsUS: Bool {
+        guard let symbol = selectedSymbol else { return false }
+        if let entry = universe.entries.first(where: { $0.symbol == symbol }) { return entry.isUS }
+        if let info = env.data.stockInfo[symbol] { return info.currency == .usd }
+        return symbol.range(of: "^[0-9][0-9A-Z]{5}$", options: .regularExpression) == nil
+    }
 
     private var originalSymbol: String? {
         if case .stock(let config)? = existing?.kind { return config.symbol }
@@ -272,6 +285,14 @@ struct StockItemEditor: View {
                 TextField("메뉴바 표시 이름", text: $displayName, prompt: Text("비우면 종목명 사용"))
                 Toggle("메뉴바에 이름 표시", isOn: $showName)
                 Toggle("메뉴바에 전일 대비 등락률 표시", isOn: $showChange)
+                if selectedIsUS {
+                    Picker("가격 표시 통화", selection: $displayCurrency) {
+                        ForEach(PriceDisplayCurrency.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("원화는 USD/KRW 매매기준율로 환산합니다. 등락률은 달러 기준입니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .formStyle(.columns)
 
@@ -305,7 +326,8 @@ struct StockItemEditor: View {
             symbol: symbol,
             displayName: displayName.nilIfBlank,
             showName: showName,
-            showChange: showChange
+            showChange: showChange,
+            displayCurrency: selectedIsUS ? displayCurrency : .native
         )
     }
 

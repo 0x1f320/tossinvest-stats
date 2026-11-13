@@ -30,8 +30,18 @@ struct StockPopoverView: View {
         return nil
     }
 
-    private var currency: Currency {
-        config.map { data.currency(for: $0.symbol) } ?? .krw
+    private var conversion: PriceConversion {
+        guard let config else { return PriceConversion(factor: 1, currency: .krw, rate: nil) }
+        return data.priceConversion(symbol: config.symbol, display: config.displayCurrency)
+    }
+
+    /// Currency the popover shows prices in.
+    private var currency: Currency { conversion.currency }
+
+    private func setDisplayCurrency(_ value: PriceDisplayCurrency) {
+        guard var config else { return }
+        config.displayCurrency = value
+        store.upsert(MenuItemConfig(id: itemID, kind: .stock(config)))
     }
 
     var body: some View {
@@ -70,6 +80,8 @@ struct StockPopoverView: View {
     private func header(_ config: StockItemConfig) -> some View {
         let info = data.stockInfo[config.symbol]
         let quote = data.quotes[config.symbol]
+        let conv = conversion
+        let isUS = data.currency(for: config.symbol) == .usd
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
@@ -77,9 +89,24 @@ struct StockPopoverView: View {
                 Spacer()
                 Text([info?.market, config.symbol].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
+                if isUS {
+                    // US stocks: switch this item's currency right here (the menu bar follows).
+                    Picker("표시 통화", selection: Binding(
+                        get: { config.displayCurrency },
+                        set: { setDisplayCurrency($0) }
+                    )) {
+                        Text("$").tag(PriceDisplayCurrency.native)
+                        Text("₩").tag(PriceDisplayCurrency.krw)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .controlSize(.small)
+                    .help("이 항목의 가격 표시 통화")
+                }
             }
             if let selected = selectedPoint {
-                // Hovering the chart: show the value at that point.
+                // Hovering the chart: show the value at that point (already converted).
                 Text(Fmt.priceWithUnit(Decimal(selected.value), currency))
                     .font(.system(size: 24, weight: .semibold, design: .rounded).monospacedDigit())
                 Text(selected.date, format: range == .day
@@ -87,12 +114,12 @@ struct StockPopoverView: View {
                      : .dateTime.year().month().day())
                     .font(.callout).foregroundStyle(.secondary)
             } else if let quote {
-                Text(Fmt.priceWithUnit(quote.lastPrice.value, currency))
+                Text(Fmt.priceWithUnit(conv.apply(quote.lastPrice.value), currency))
                     .font(.system(size: 24, weight: .semibold, design: .rounded).monospacedDigit())
                 HStack(spacing: 6) {
                     if let change = data.change(for: config.symbol) {
                         let trend = Trend(change.amount)
-                        Text("\(trend.arrow) \(Fmt.signedAmount(change.amount, currency)) (\(Fmt.percent(ratio: change.rate)))")
+                        Text("\(trend.arrow) \(Fmt.signedAmount(conv.apply(change.amount), currency)) (\(Fmt.percent(ratio: change.rate)))")
                             .foregroundStyle(trend.color)
                         Text("전일 대비").foregroundStyle(.secondary)
                     }
@@ -103,6 +130,13 @@ struct StockPopoverView: View {
                     }
                 }
                 .font(.callout.monospacedDigit())
+                if let rate = conv.rate {
+                    Text("$\(Fmt.number(quote.lastPrice.value, fraction: 2)) × USD/KRW \(Fmt.number(rate, fraction: 2)) (현재 매매기준율) · 등락률은 달러 기준")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if isUS, config.displayCurrency == .krw {
+                    Text("환율을 불러오는 중이라 달러로 표시합니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             } else {
                 Text(data.symbolErrors[config.symbol] ?? "불러오는 중…")
                     .font(.callout).foregroundStyle(.secondary)
@@ -112,17 +146,22 @@ struct StockPopoverView: View {
 
     // MARK: Chart
 
+    /// In KRW, past prices are converted at today's rate, so the shape matches the USD chart.
     private var points: [ChartPoint] {
-        candles.map { ChartPoint(date: $0.timestamp, value: $0.closePrice.double) }
+        let conv = conversion
+        return candles.map { ChartPoint(date: $0.timestamp, value: conv.apply($0.closePrice.double)) }
     }
 
     /// Dashed reference line: the previous close on 1D, the first close otherwise.
     private var baseline: Double? {
         guard let config else { return nil }
+        let raw: Double?
         if range == .day {
-            return data.daily[config.symbol]?.previous?.closePrice.double ?? candles.first?.openPrice.double
+            raw = data.daily[config.symbol]?.previous?.closePrice.double ?? candles.first?.openPrice.double
+        } else {
+            raw = candles.first?.closePrice.double
         }
-        return candles.first?.closePrice.double
+        return raw.map { conversion.apply($0) }
     }
 
     private var periodChange: Decimal? {
@@ -232,19 +271,20 @@ struct StockPopoverView: View {
     private func stats(_ config: StockItemConfig) -> some View {
         if let snapshot = data.daily[config.symbol] {
             let latest = snapshot.latest
+            let conv = conversion
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
                 GridRow {
-                    StatCell(title: "시가", value: Fmt.price(latest.openPrice.value, currency))
-                    StatCell(title: "고가", value: Fmt.price(latest.highPrice.value, currency), valueColor: Trend.up.color)
-                    StatCell(title: "저가", value: Fmt.price(latest.lowPrice.value, currency), valueColor: Trend.down.color)
+                    StatCell(title: "시가", value: Fmt.price(conv.apply(latest.openPrice.value), currency))
+                    StatCell(title: "고가", value: Fmt.price(conv.apply(latest.highPrice.value), currency), valueColor: Trend.up.color)
+                    StatCell(title: "저가", value: Fmt.price(conv.apply(latest.lowPrice.value), currency), valueColor: Trend.down.color)
                     StatCell(title: "거래량", value: Fmt.compact(latest.volume.value))
                 }
                 if let previous = snapshot.previous {
                     GridRow {
-                        StatCell(title: "전일 종가", value: Fmt.price(previous.closePrice.value, currency))
+                        StatCell(title: "전일 종가", value: Fmt.price(conv.apply(previous.closePrice.value), currency))
                         if let lo = candles.map(\.lowPrice.value).min(), let hi = candles.map(\.highPrice.value).max(), range != .day {
-                            StatCell(title: "\(range.title) 최고", value: Fmt.price(hi, currency))
-                            StatCell(title: "\(range.title) 최저", value: Fmt.price(lo, currency))
+                            StatCell(title: "\(range.title) 최고", value: Fmt.price(conv.apply(hi), currency))
+                            StatCell(title: "\(range.title) 최저", value: Fmt.price(conv.apply(lo), currency))
                         } else {
                             StatCell(title: " ", value: " ")
                             StatCell(title: " ", value: " ")

@@ -41,6 +41,28 @@ struct ChartPoint: Identifiable, Hashable {
     var id: Date { date }
 }
 
+/// How to show a price: the factor to multiply by and the resulting currency.
+struct PriceConversion {
+    let factor: Decimal
+    /// Currency to display.
+    let currency: Currency
+    /// The USD/KRW rate applied when converting to KRW, otherwise nil.
+    let rate: Decimal?
+
+    var isConverted: Bool { rate != nil }
+    func apply(_ value: Decimal) -> Decimal { value * factor }
+    func apply(_ value: Double) -> Double { value * factor.double }
+
+    /// A US stock shown in KRW is converted once the rate is known. Until then, and for
+    /// everything else, the price stays in its trading currency.
+    static func make(native: Currency, display: PriceDisplayCurrency, usdKrw: Decimal?) -> PriceConversion {
+        if display == .krw, native == .usd, let rate = usdKrw {
+            return PriceConversion(factor: rate, currency: .krw, rate: rate)
+        }
+        return PriceConversion(factor: 1, currency: native, rate: nil)
+    }
+}
+
 extension Currency {
     /// Time zone of the exchange, used to find the session day for intraday charts.
     var marketTimeZone: TimeZone {
@@ -65,6 +87,7 @@ final class MarketDataService: ObservableObject {
     @Published private(set) var quotes: [String: PriceQuote] = [:]
     @Published private(set) var daily: [String: DailySnapshot] = [:]
     @Published private(set) var stockInfo: [String: StockInfo] = [:]
+    @Published private(set) var usdKrw: ExchangeRate?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var errorMessage: String?
     @Published private(set) var symbolErrors: [String: String] = [:]
@@ -75,6 +98,7 @@ final class MarketDataService: ObservableObject {
     private let settings: AppSettings
 
     private var loopTask: Task<Void, Never>?
+    private var lastFxFetch: Date?
     private var lastStockInfoAttempt: [String: Date] = [:]
     private var chartCache: [String: (fetchedAt: Date, points: [Candle])] = [:]
 
@@ -101,6 +125,8 @@ final class MarketDataService: ObservableObject {
     func reset() {
         quotes = [:]
         daily = [:]
+        usdKrw = nil
+        lastFxFetch = nil
         errorMessage = nil
         symbolErrors = [:]
         chartCache = [:]
@@ -124,6 +150,13 @@ final class MarketDataService: ObservableObject {
         guard base != 0 else { return nil }
         let amount = quote.lastPrice.value - base
         return (amount, amount / base)
+    }
+
+    /// USD/KRW base rate (매매기준율).
+    var usdKrwRate: Decimal? { usdKrw?.midRate.value }
+
+    func priceConversion(symbol: String, display: PriceDisplayCurrency) -> PriceConversion {
+        PriceConversion.make(native: currency(for: symbol), display: display, usdKrw: usdKrwRate)
     }
 
     // MARK: Polling
@@ -190,6 +223,17 @@ final class MarketDataService: ObservableObject {
                 }
             } catch {
                 symbolErrors[symbol] = symbolErrors[symbol] ?? error.localizedDescription
+            }
+        }
+
+        // 4) USD/KRW rate for items shown in KRW, cached for a minute.
+        if store.needsUsdKrwForStocks,
+           lastFxFetch.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
+            do {
+                usdKrw = try await client.usdKrwRate()
+                lastFxFetch = Date()
+            } catch {
+                errors.append(error.localizedDescription)
             }
         }
 

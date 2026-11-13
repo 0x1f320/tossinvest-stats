@@ -1,11 +1,45 @@
 import Foundation
 
+/// Currency for a US stock's price. Domestic stocks are always in KRW.
+enum PriceDisplayCurrency: String, Codable, CaseIterable, Identifiable {
+    /// The trading currency (USD for US stocks).
+    case native
+    /// Converted to KRW at the USD/KRW base rate.
+    case krw
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .native: return "달러 ($)"
+        case .krw: return "원화 (₩)"
+        }
+    }
+}
+
 struct StockItemConfig: Codable, Hashable {
     var symbol: String
     /// Name shown in the menu bar. nil uses the stock's name.
     var displayName: String?
     var showName: Bool = true
     var showChange: Bool = true
+    /// Price currency for US stocks, set per item.
+    var displayCurrency: PriceDisplayCurrency = .native
+}
+
+extension StockItemConfig {
+    private enum CodingKeys: String, CodingKey {
+        case symbol, displayName, showName, showChange, displayCurrency
+    }
+
+    /// Fills defaults for keys that older saved configs don't have.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        symbol = try c.decode(String.self, forKey: .symbol)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        showName = try c.decodeIfPresent(Bool.self, forKey: .showName) ?? true
+        showChange = try c.decodeIfPresent(Bool.self, forKey: .showChange) ?? true
+        displayCurrency = try c.decodeIfPresent(PriceDisplayCurrency.self, forKey: .displayCurrency) ?? .native
+    }
 }
 
 enum ItemKind: Codable, Hashable {
@@ -65,6 +99,14 @@ final class ItemStore: ObservableObject {
         return items.compactMap {
             if case .stock(let config) = $0.kind, seen.insert(config.symbol).inserted { return config.symbol }
             return nil
+        }
+    }
+
+    /// Whether any stock item shows prices in KRW, which needs the USD/KRW rate.
+    var needsUsdKrwForStocks: Bool {
+        items.contains {
+            if case .stock(let config) = $0.kind { return config.displayCurrency == .krw }
+            return false
         }
     }
 
