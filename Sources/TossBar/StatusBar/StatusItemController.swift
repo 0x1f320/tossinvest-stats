@@ -87,26 +87,31 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     // MARK: Click handling
 
     /// Left click opens the popover; right click or control-click opens the menu.
+    /// Items without a popover open the menu on any click.
     @objc private func handleClick(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showContextMenu()
+        } else if let root = popoverContent() {
+            togglePopover(root)
         } else {
-            togglePopover()
+            showContextMenu()
         }
     }
 
-    private func togglePopover() {
+    private func popoverContent() -> AnyView? {
+        switch config.kind {
+        case .stock: return AnyView(StockPopoverView(itemID: id, env: env))
+        case .asset: return nil
+        }
+    }
+
+    private func togglePopover(_ root: AnyView) {
         if popover.isShown {
             popover.performClose(nil)
             return
         }
         guard let button = statusItem.button else { return }
-        let root: AnyView
-        switch config.kind {
-        case .stock:
-            root = AnyView(StockPopoverView(itemID: id, env: env))
-        }
         let host = NSHostingController(rootView: root)
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
@@ -160,6 +165,7 @@ enum TitleRenderer {
     static func title(for config: MenuItemConfig, env: AppEnvironment) -> NSAttributedString {
         switch config.kind {
         case .stock(let stock): return stockTitle(stock, env: env)
+        case .asset(let asset): return assetTitle(asset, env: env)
         }
     }
 
@@ -168,6 +174,10 @@ enum TitleRenderer {
         case .stock(let stock):
             let name = env.data.stockInfo[stock.symbol]?.name ?? stock.symbol
             return "주가 · \(name) (\(stock.symbol))"
+        case .asset(let asset):
+            let seq = env.data.accountSeq(for: asset)
+            let account = env.data.accounts.first { $0.accountSeq == seq }?.maskedNumber ?? "기본 계좌"
+            return "자산 · \(account) · \(asset.mode.title)"
         }
     }
 
@@ -200,6 +210,25 @@ enum TitleRenderer {
         if config.showChange, let change = data.change(for: config.symbol) {
             result.append(attributed(" " + Fmt.percent(ratio: change.rate)))
         }
+        return result
+    }
+
+    /// Format from the spec: `{profit}₩ ({rate}%)`, e.g. `+1,019,000₩ (+11.79%)`.
+    private static func assetTitle(_ config: AssetItemConfig, env: AppEnvironment) -> NSAttributedString {
+        let data = env.data
+        let result = NSMutableAttributedString()
+        if let label = config.label.nilIfBlank {
+            result.append(attributed(label + " "))
+        }
+        guard let seq = data.accountSeq(for: config), let overview = data.holdings[seq] else {
+            let fallback = config.label.nilIfBlank == nil ? "자산 " : ""
+            result.append(attributed(fallback + (data.errorMessage != nil && !data.isRefreshing ? "⚠︎" : "…")))
+            return result
+        }
+        let summary = AssetSummary(overview: overview, usdKrw: data.usdKrwRate)
+        let headline = summary.headline(for: config)
+        let amountText = headline.amount.map(Fmt.krwProfit) ?? "…₩"
+        result.append(attributed("\(amountText) (\(Fmt.percent(ratio: headline.rate)))"))
         return result
     }
 }

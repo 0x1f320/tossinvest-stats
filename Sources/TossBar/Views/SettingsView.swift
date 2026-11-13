@@ -32,11 +32,13 @@ struct SettingsView: View {
 
 enum EditorTarget: Identifiable {
     case newStock
+    case newAsset
     case edit(MenuItemConfig)
 
     var id: String {
         switch self {
         case .newStock: return "newStock"
+        case .newAsset: return "newAsset"
         case .edit(let item): return item.id.uuidString
         }
     }
@@ -76,7 +78,7 @@ struct ItemsSettingsView: View {
             .listStyle(.bordered(alternatesRowBackgrounds: true))
             .overlay {
                 if store.items.isEmpty {
-                    Text("아직 항목이 없습니다.\n아래 + 버튼으로 항목을 추가하세요.")
+                    Text("아직 항목이 없습니다.\n아래 + 버튼으로 '주가' 또는 '자산' 항목을 추가하세요.")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                 }
@@ -85,6 +87,7 @@ struct ItemsSettingsView: View {
             HStack(spacing: 8) {
                 Menu {
                     Button("주가 항목 추가…") { editor = .newStock }
+                    Button("자산 항목 추가…") { editor = .newAsset }
                 } label: {
                     Label("추가", systemImage: "plus")
                 }
@@ -118,9 +121,12 @@ struct ItemsSettingsView: View {
             switch target {
             case .newStock:
                 StockItemEditor(env: env, existing: nil) { editor = nil }
+            case .newAsset:
+                AssetItemEditor(env: env, existing: nil) { editor = nil }
             case .edit(let item):
                 switch item.kind {
                 case .stock: StockItemEditor(env: env, existing: item) { editor = nil }
+                case .asset: AssetItemEditor(env: env, existing: item) { editor = nil }
                 }
             }
         }
@@ -135,6 +141,13 @@ struct ItemsSettingsView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("주가 · \(config.displayName?.nilIfBlank ?? data.stockInfo[config.symbol]?.name ?? config.symbol)")
                     Text(stockDetail(config))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            case .asset(let config):
+                Image(systemName: "wallet.pass").foregroundStyle(.orange).frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("자산" + (config.label.nilIfBlank.map { " · \($0)" } ?? ""))
+                    Text(assetDetail(config))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -157,6 +170,11 @@ struct ItemsSettingsView: View {
             config.showChange ? "등락률 표시" : "등락률 숨김",
             config.displayCurrency == .krw ? "원화 환산" : nil,
         ].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func assetDetail(_ config: AssetItemConfig) -> String {
+        let account = data.accounts.first { $0.accountSeq == config.accountSeq }?.maskedNumber ?? "기본 계좌"
+        return "\(account) · \(config.mode.title)"
     }
 }
 
@@ -352,6 +370,88 @@ struct StockItemEditor: View {
         } else {
             env.store.upsert(item)
             dismiss()
+        }
+    }
+}
+
+// MARK: - Asset editor
+
+struct AssetItemEditor: View {
+    let env: AppEnvironment
+    let existing: MenuItemConfig?
+    var dismiss: () -> Void
+
+    @ObservedObject private var data: MarketDataService
+    @State private var label = ""
+    @State private var accountSeq: Int64?
+    @State private var mode: AssetMode = .total
+    @State private var loadingAccounts = false
+    @State private var error: String?
+
+    init(env: AppEnvironment, existing: MenuItemConfig?, dismiss: @escaping () -> Void) {
+        self.env = env
+        self.existing = existing
+        self.dismiss = dismiss
+        self.data = env.data
+        if case .asset(let config)? = existing?.kind {
+            _label = State(initialValue: config.label)
+            _accountSeq = State(initialValue: config.accountSeq)
+            _mode = State(initialValue: config.mode)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(existing == nil ? "자산 항목 추가" : "자산 항목 편집").font(.title3.weight(.semibold))
+            Text("보유 종목 기준 손익을 메뉴바에 '{수익}₩ ({수익률}%)' 형식으로 표시합니다. 해외 주식 손익은 매매기준율로 원화 환산합니다.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Form {
+                TextField("라벨", text: $label, prompt: Text("선택 (예: 💰, 주식)"))
+                HStack {
+                    Picker("계좌", selection: $accountSeq) {
+                        Text("기본 계좌 (첫 번째)").tag(Int64?.none)
+                        ForEach(data.accounts) { account in
+                            Text("\(account.maskedNumber) · \(account.accountType == "BROKERAGE" ? "종합매매" : account.accountType)")
+                                .tag(Int64?.some(account.accountSeq))
+                        }
+                    }
+                    if loadingAccounts { ProgressView().controlSize(.small) }
+                }
+                Picker("표시 기준", selection: $mode) {
+                    ForEach(AssetMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+            }
+            .formStyle(.columns)
+
+            if let error {
+                Text(error).font(.callout).foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("취소", action: dismiss).keyboardShortcut(.cancelAction)
+                Button(existing == nil ? "추가" : "저장") {
+                    let config = AssetItemConfig(label: label, accountSeq: accountSeq, mode: mode)
+                    env.store.upsert(MenuItemConfig(id: existing?.id ?? UUID(), kind: .asset(config)))
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task {
+            guard data.accounts.isEmpty else { return }
+            loadingAccounts = true
+            defer { loadingAccounts = false }
+            do {
+                _ = try await data.loadAccounts()
+            } catch {
+                self.error = "계좌 목록을 불러오지 못했습니다: \(error.localizedDescription)"
+            }
         }
     }
 }

@@ -42,8 +42,32 @@ extension StockItemConfig {
     }
 }
 
+enum AssetMode: String, Codable, CaseIterable, Identifiable {
+    /// Profit on the holdings since purchase.
+    case total
+    /// Profit since the previous close.
+    case daily
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .total: return "전체 손익"
+        case .daily: return "일간 손익"
+        }
+    }
+}
+
+struct AssetItemConfig: Codable, Hashable {
+    /// Prefix in the menu bar. Empty means none.
+    var label: String = ""
+    /// nil means the first account.
+    var accountSeq: Int64?
+    var mode: AssetMode = .total
+}
+
 enum ItemKind: Codable, Hashable {
     case stock(StockItemConfig)
+    case asset(AssetItemConfig)
 }
 
 /// One menu bar item. Each config becomes its own `NSStatusItem`.
@@ -54,6 +78,7 @@ struct MenuItemConfig: Codable, Hashable, Identifiable {
     var typeTitle: String {
         switch kind {
         case .stock: return "주가"
+        case .asset: return "자산"
         }
     }
 }
@@ -107,6 +132,13 @@ final class ItemStore: ObservableObject {
         items.contains {
             if case .stock(let config) = $0.kind { return config.displayCurrency == .krw }
             return false
+        }
+    }
+
+    var assetConfigs: [AssetItemConfig] {
+        items.compactMap {
+            if case .asset(let config) = $0.kind { return config }
+            return nil
         }
     }
 
