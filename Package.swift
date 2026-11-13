@@ -9,5 +9,10 @@ let package = Package(
             name: "TossBar",
             path: "Sources/TossBar"
         ),
+        .testTarget(
+            name: "TossBarTests",
+            dependencies: ["TossBar"],
+            path: "Tests/TossBarTests"
+        ),
     ]
 )
