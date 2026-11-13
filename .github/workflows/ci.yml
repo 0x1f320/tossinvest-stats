@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build app bundle (release)
+        run: scripts/build-app.sh release
+
+      - name: Archive app bundle
+        run: ditto -c -k --keepParent build/TossBar.app build/TossBar.zip
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: TossBar
+          path: build/TossBar.zip
+          if-no-files-found: error
