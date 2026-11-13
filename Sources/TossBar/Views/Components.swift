@@ -1,5 +1,42 @@
 import SwiftUI
 
+/// A light Path-based sparkline. Cheaper than Swift Charts when a list draws dozens of them.
+struct Sparkline: View {
+    let values: [Double]
+    var color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            if values.count >= 2, let minV = values.min(), let maxV = values.max() {
+                let span = max(maxV - minV, .ulpOfOne)
+                let stepX = geo.size.width / CGFloat(values.count - 1)
+                let point: (Int) -> CGPoint = { index in
+                    CGPoint(
+                        x: CGFloat(index) * stepX,
+                        y: geo.size.height - CGFloat((values[index] - minV) / span) * geo.size.height
+                    )
+                }
+                ZStack {
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: geo.size.height))
+                        for index in values.indices { path.addLine(to: point(index)) }
+                        path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
+                        path.closeSubpath()
+                    }
+                    .fill(LinearGradient(colors: [color.opacity(0.22), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    Path { path in
+                        path.move(to: point(0))
+                        for index in values.indices.dropFirst() { path.addLine(to: point(index)) }
+                    }
+                    .stroke(color, style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
+                }
+            } else {
+                Rectangle().fill(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+        }
+    }
+}
+
 struct StatCell: View {
     let title: String
     let value: String

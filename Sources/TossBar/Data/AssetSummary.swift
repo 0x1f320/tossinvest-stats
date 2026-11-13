@@ -31,6 +31,7 @@ struct AssetSummary {
 
     var purchase: Decimal? { krw(overview.totalPurchaseAmount) }
     var marketValue: Decimal? { krw(overview.marketValue.amount) }
+    var marketValueAfterCost: Decimal? { krw(overview.marketValue.amountAfterCost) }
 
     var profit: Decimal? { krw(overview.profitLoss.amount) }
     var profitRate: Decimal { overview.profitLoss.rate.value }
@@ -44,5 +45,12 @@ struct AssetSummary {
         case .total: return (profit, profitRate)
         case .daily: return (dailyProfit, dailyRate)
         }
+    }
+
+    /// A holding's share of the portfolio, by KRW-converted market value.
+    func weight(of item: HoldingItem) -> Decimal? {
+        guard let total = marketValue, total != 0,
+              let value = krw(item.marketValue.amount.value, currency: item.currency) else { return nil }
+        return value / total
     }
 }
