@@ -6,12 +6,30 @@ import ServiceManagement
 @MainActor
 final class AppEnvironment: ObservableObject {
     let client = TossAPIClient.shared
+    let settings: AppSettings
+    let store: ItemStore
     let credentials: CredentialStore
+    let data: MarketDataService
+    let universe: StockUniverse
 
     var openSettings: () -> Void = {}
 
+    /// Set by "편집…" in a menu or popover. The settings window opens the editor for it.
+    @Published var pendingEdit: UUID?
+
     init() {
+        settings = AppSettings()
+        store = ItemStore()
         credentials = CredentialStore(client: client)
+        data = MarketDataService(client: client, store: store, settings: settings)
+        universe = StockUniverse(client: client)
+        credentials.onChange = { [weak self] in self?.data.reset() }
+    }
+
+    func editItem(_ id: UUID) {
+        UserDefaults.standard.set("items", forKey: "settingsTab")
+        openSettings()
+        pendingEdit = id
     }
 
     func quit() {
