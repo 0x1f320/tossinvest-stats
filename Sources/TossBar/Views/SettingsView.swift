@@ -174,7 +174,12 @@ struct ItemsSettingsView: View {
 
     private func assetDetail(_ config: AssetItemConfig) -> String {
         let account = data.accounts.first { $0.accountSeq == config.accountSeq }?.maskedNumber ?? "기본 계좌"
-        return "\(account) · \(config.mode.title)\(config.usesAfterCost ? " · 수수료·세금 제외" : "")"
+        return [
+            account,
+            config.mode.title,
+            config.usesAfterCost ? "수수료·세금 제외" : nil,
+            config.colorByTrend ? "손익 색상" : nil,
+        ].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -386,6 +391,7 @@ struct AssetItemEditor: View {
     @State private var accountSeq: Int64?
     @State private var mode: AssetMode = .total
     @State private var afterCost = false
+    @State private var colorByTrend = false
     @State private var loadingAccounts = false
     @State private var error: String?
 
@@ -399,6 +405,7 @@ struct AssetItemEditor: View {
             _accountSeq = State(initialValue: config.accountSeq)
             _mode = State(initialValue: config.mode)
             _afterCost = State(initialValue: config.afterCost)
+            _colorByTrend = State(initialValue: config.colorByTrend)
         }
     }
 
@@ -436,6 +443,10 @@ struct AssetItemEditor: View {
                      : "일간 손익은 원본 기준만 제공됩니다.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Toggle("메뉴바에 손익 색상 표시", isOn: $colorByTrend)
+                Text("수익은 빨강, 손실은 파랑처럼 손익 부호에 따라 색을 입힙니다. 색상 규칙은 일반 설정을 따릅니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .formStyle(.columns)
 
@@ -447,7 +458,10 @@ struct AssetItemEditor: View {
                 Spacer()
                 Button("취소", action: dismiss).keyboardShortcut(.cancelAction)
                 Button(existing == nil ? "추가" : "저장") {
-                    let config = AssetItemConfig(label: label, accountSeq: accountSeq, mode: mode, afterCost: afterCost)
+                    let config = AssetItemConfig(
+                        label: label, accountSeq: accountSeq, mode: mode,
+                        afterCost: afterCost, colorByTrend: colorByTrend
+                    )
                     env.store.upsert(MenuItemConfig(id: existing?.id ?? UUID(), kind: .asset(config)))
                     dismiss()
                 }
@@ -489,7 +503,7 @@ struct GeneralSettingsView: View {
             }
             .onChange(of: settings.refreshInterval) { _, _ in env.data.start() }
 
-            Picker("팝오버 색상 규칙", selection: $settings.koreanColorConvention) {
+            Picker("등락 색상 규칙", selection: $settings.koreanColorConvention) {
                 Text("상승 빨강 · 하락 파랑 (국내식)").tag(true)
                 Text("상승 초록 · 하락 빨강 (해외식)").tag(false)
             }

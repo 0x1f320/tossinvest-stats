@@ -11,8 +11,8 @@ final class AppSettings: ObservableObject {
     @Published var refreshInterval: Double {
         didSet { UserDefaults.standard.set(refreshInterval, forKey: Key.refreshInterval) }
     }
-    /// Colors in popovers. true: up red, down blue (Korean). false: up green, down red.
-    /// The menu bar text itself is always white.
+    /// Trend colors in popovers, and in the menu bar for asset items that opt in.
+    /// true: up red, down blue (Korean). false: up green, down red.
     @Published var koreanColorConvention: Bool {
         didSet {
             UserDefaults.standard.set(koreanColorConvention, forKey: Key.koreanColors)

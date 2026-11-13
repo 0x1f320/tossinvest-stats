@@ -48,4 +48,10 @@ struct TrendTests {
         #expect(Trend(-1).arrow == "▼")
         #expect(Trend(0).arrow == "–")
     }
+
+    @Test func menuBarColorKeepsZeroWhite() {
+        #expect(Trend(0).menuBarColor == .white)
+        #expect(Trend(1).menuBarColor != .white)
+        #expect(Trend(-1).menuBarColor != .white)
+    }
 }

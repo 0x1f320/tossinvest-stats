@@ -66,6 +66,9 @@ struct AssetItemConfig: Codable, Hashable {
     /// Profit basis. false: raw profit. true: after fees and taxes. Applies to the total
     /// mode only; the API reports daily profit before costs only.
     var afterCost: Bool = false
+    /// Colors the menu bar profit and rate by their sign, following the app's color
+    /// convention. Off keeps the text white.
+    var colorByTrend: Bool = false
 
     /// True when the after-cost basis is actually in effect.
     var usesAfterCost: Bool { mode == .total && afterCost }
@@ -73,7 +76,7 @@ struct AssetItemConfig: Codable, Hashable {
 
 extension AssetItemConfig {
     private enum CodingKeys: String, CodingKey {
-        case label, accountSeq, mode, afterCost
+        case label, accountSeq, mode, afterCost, colorByTrend
     }
 
     /// Fills defaults for keys that older saved configs don't have.
@@ -83,6 +86,7 @@ extension AssetItemConfig {
         accountSeq = try c.decodeIfPresent(Int64.self, forKey: .accountSeq)
         mode = try c.decodeIfPresent(AssetMode.self, forKey: .mode) ?? .total
         afterCost = try c.decodeIfPresent(Bool.self, forKey: .afterCost) ?? false
+        colorByTrend = try c.decodeIfPresent(Bool.self, forKey: .colorByTrend) ?? false
     }
 }
 

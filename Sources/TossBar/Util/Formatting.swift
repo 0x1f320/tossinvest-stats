@@ -124,9 +124,15 @@ enum Trend {
         case .flat: return .secondaryLabelColor
         }
     }
+
+    /// Color for menu bar text. Zero stays white like the rest of the text.
+    var menuBarColor: NSColor {
+        self == .flat ? .white : nsColor
+    }
 }
 
-/// Global color convention, mirrored from `AppSettings` so plain views can read it.
+/// Global color convention, mirrored from `AppSettings` so plain views and the menu bar
+/// renderer can read it.
 enum Palette {
     /// true: up is red and down is blue (Korean convention). false: up green, down red.
     nonisolated(unsafe) static var koreanConvention = true

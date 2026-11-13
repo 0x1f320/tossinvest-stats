@@ -87,5 +87,12 @@ struct AssetItemConfigTests {
         #expect(config.mode == .daily)
         #expect(config.accountSeq == nil)
         #expect(config.afterCost == false)
+        #expect(config.colorByTrend == false)
+    }
+
+    @Test func roundTripsTrendColor() throws {
+        let item = MenuItemConfig(kind: .asset(AssetItemConfig(label: "주식", colorByTrend: true)))
+        let decoded = try JSONDecoder().decode(MenuItemConfig.self, from: JSONEncoder().encode(item))
+        #expect(decoded == item)
     }
 }
