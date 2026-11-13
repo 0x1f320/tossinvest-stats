@@ -20,6 +20,7 @@ An asset item shows the profit on an account's holdings as `{profit}₩ ({rate}%
 - **Profit:** since purchase or since the previous close, either raw or after fees and taxes.
 - **Popover:** clicking the item lists every holding with its price, a 30-day sparkline and its profit. Tapping a holding shows how its market value, purchase amount, profit, costs and weight are calculated.
 - **US holdings:** converted to KRW at the base rate.
+- **Profit colors:** each item can color its profit and rate by their sign, red for a gain and blue for a loss by default. The color convention is set in the general settings.
 
 ### Any number of items
 

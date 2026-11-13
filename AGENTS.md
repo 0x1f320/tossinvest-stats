@@ -98,7 +98,7 @@ Keep these unless a change deliberately revisits them and the PR explains why.
   - `behavior = []` (menu bar managers simulate ⌘-drag).
   - Fixed width that only grows, padded by text width + 4 pt.
   - The title is reassigned only when it changes.
-- **Menu bar text is always white.**
+- **Menu bar text is white by default.** An asset item can opt into trend colors (`colorByTrend`), which color only its profit and rate by their sign, following the app's color convention. Labels, placeholders and stock items stay white.
 - **Asset title format:** `{profit}₩ ({rate}%)`, for example `+1,019,000₩ (+11.79%)`.
 - **Secrets live in user-only files,** not the Keychain: `~/Library/Application Support/TossBar/`, with a `0700` directory and `0600` files.
   - **Why:** the Keychain re-prompts after every ad-hoc re-sign.

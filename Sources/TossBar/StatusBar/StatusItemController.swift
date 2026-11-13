@@ -203,9 +203,9 @@ enum TitleRenderer {
         }
     }
 
-    /// Menu bar text is always white, whatever the trend or loading state.
-    private static func attributed(_ text: String) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white])
+    /// Menu bar text is white unless an asset item opts into trend colors.
+    private static func attributed(_ text: String, color: NSColor = .white) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
     }
 
     private static func stockTitle(_ config: StockItemConfig, env: AppEnvironment) -> NSAttributedString {
@@ -250,7 +250,10 @@ enum TitleRenderer {
         let summary = AssetSummary(overview: overview, usdKrw: data.usdKrwRate)
         let headline = summary.headline(for: config)
         let amountText = headline.amount.map(Fmt.krwProfit) ?? "…₩"
-        result.append(attributed("\(amountText) (\(Fmt.percent(ratio: headline.rate)))"))
+        // The label stays white; the profit and rate take the trend color when enabled.
+        // The rate decides while the KRW amount waits for the USD/KRW rate.
+        let color = config.colorByTrend ? Trend(headline.amount ?? headline.rate).menuBarColor : .white
+        result.append(attributed("\(amountText) (\(Fmt.percent(ratio: headline.rate)))", color: color))
         return result
     }
 }
