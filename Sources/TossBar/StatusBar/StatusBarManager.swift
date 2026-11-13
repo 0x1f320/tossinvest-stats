@@ -77,6 +77,8 @@ final class StatusBarManager {
 
     private func dumpDiagnostics() {
         print("[diag] \(Date()) items=\(controllers.count) placeholder=\(placeholder != nil)")
+        if let error = env.data.errorMessage { print("[diag]   error=\(error)") }
+        for (symbol, error) in env.data.symbolErrors { print("[diag]   \(symbol) error=\(error)") }
         for controller in controllers.values {
             print("[diag]   " + controller.diagnostics)
         }
