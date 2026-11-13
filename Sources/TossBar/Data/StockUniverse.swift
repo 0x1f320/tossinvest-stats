@@ -11,6 +11,8 @@ final class StockUniverse: ObservableObject {
         let market: String
         let securityType: String?
         var id: String { market + ":" + symbol }
+
+        var isUS: Bool { ["NASDAQ", "NYSE", "AMEX", "US_ETC"].contains(market) }
     }
 
     private struct DiskCache: Codable {

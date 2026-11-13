@@ -190,7 +190,13 @@ enum TitleRenderer {
             result.append(attributed(config.showName ? placeholder : "\(config.symbol) \(placeholder)"))
             return result
         }
-        result.append(attributed(Fmt.price(quote.lastPrice.value, quote.currency)))
+        let conversion = data.priceConversion(symbol: config.symbol, display: config.displayCurrency)
+        if conversion.isConverted {
+            // Add 원 so a converted price can't be mistaken for a domestic one.
+            result.append(attributed(Fmt.priceWithUnit(conversion.apply(quote.lastPrice.value), .krw)))
+        } else {
+            result.append(attributed(Fmt.price(quote.lastPrice.value, quote.currency)))
+        }
         if config.showChange, let change = data.change(for: config.symbol) {
             result.append(attributed(" " + Fmt.percent(ratio: change.rate)))
         }
