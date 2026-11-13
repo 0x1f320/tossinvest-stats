@@ -104,6 +104,8 @@ final class MarketDataService: ObservableObject {
     private var lastAccountsFetch: Date?
     private var lastStockInfoAttempt: [String: Date] = [:]
     private var chartCache: [String: (fetchedAt: Date, points: [Candle])] = [:]
+    private var sparkCache: [String: (fetchedAt: Date, values: [Double])] = [:]
+    private var sparkInFlight: [String: Task<[Double]?, Never>] = [:]
 
     init(client: TossAPIClient, store: ItemStore, settings: AppSettings) {
         self.client = client
@@ -136,6 +138,7 @@ final class MarketDataService: ObservableObject {
         errorMessage = nil
         symbolErrors = [:]
         chartCache = [:]
+        sparkCache = [:]
         start()
     }
 
@@ -328,6 +331,28 @@ final class MarketDataService: ObservableObject {
         let ascending = Array(collected.reversed())
         chartCache[key] = (Date(), ascending)
         return ascending
+    }
+
+    /// Closing prices of the last 30 trading days, for the mini charts in the holdings list.
+    /// Cached for 10 minutes; concurrent callers share one request.
+    func sparkline(symbol: String) async -> [Double]? {
+        if let cached = sparkCache[symbol], Date().timeIntervalSince(cached.fetchedAt) < 600 {
+            return cached.values
+        }
+        if let task = sparkInFlight[symbol] { return await task.value }
+        let task = Task<[Double]?, Never> { [client] in
+            guard let page = try? await client.candles(symbol: symbol, interval: .day, count: 30) else { return nil }
+            return page.candles.reversed().map { $0.closePrice.double }
+        }
+        sparkInFlight[symbol] = task
+        let values = await task.value
+        sparkInFlight[symbol] = nil
+        if let values { sparkCache[symbol] = (Date(), values) }
+        return values
+    }
+
+    func cachedSparkline(symbol: String) -> [Double]? {
+        sparkCache[symbol]?.values
     }
 
     /// A minute candle's timestamp is the end of the bar, so step back a minute to get

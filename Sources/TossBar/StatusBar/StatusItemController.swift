@@ -87,31 +87,28 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     // MARK: Click handling
 
     /// Left click opens the popover; right click or control-click opens the menu.
-    /// Items without a popover open the menu on any click.
     @objc private func handleClick(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
             showContextMenu()
-        } else if let root = popoverContent() {
-            togglePopover(root)
         } else {
-            showContextMenu()
+            togglePopover()
         }
     }
 
-    private func popoverContent() -> AnyView? {
-        switch config.kind {
-        case .stock: return AnyView(StockPopoverView(itemID: id, env: env))
-        case .asset: return nil
-        }
-    }
-
-    private func togglePopover(_ root: AnyView) {
+    private func togglePopover() {
         if popover.isShown {
             popover.performClose(nil)
             return
         }
         guard let button = statusItem.button else { return }
+        let root: AnyView
+        switch config.kind {
+        case .stock:
+            root = AnyView(StockPopoverView(itemID: id, env: env))
+        case .asset:
+            root = AnyView(AssetPopoverView(itemID: id, env: env))
+        }
         let host = NSHostingController(rootView: root)
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
